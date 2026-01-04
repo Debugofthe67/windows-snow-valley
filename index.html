@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows 12 Simulator Ultimate</title>
+    <style>
+        /* --- CORE VARIABLES --- */
+        :root {
+            --bg-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop');
+            --primary: #3b82f6;
+            --glass-bg: rgba(20, 20, 20, 0.65); /* Darker, more transparent */
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-blur: blur(25px);
+            --text-main: #ffffff;
+            --text-muted: #a1a1aa;
+            --win-bg: #202020;
+        }
+
+        * { box-sizing: border-box; user-select: none; font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; color: var(--text-main); }
+
+        /* --- SCREEN MANAGER --- */
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; }
+        .active { display: flex; }
+        .center-screen { align-items: center; justify-content: center; }
+
+        /* --- 1. SETUP STYLES --- */
+        #setup-screen { background: linear-gradient(135deg, #0061ff 0%, #60efff 100%); }
+        .setup-window { 
+            width: 700px; height: 500px; background: #fff; color: #000; border-radius: 8px; 
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3); display: flex; overflow: hidden; 
+        }
+        .setup-sidebar { width: 200px; background: #f3f3f3; padding: 20px; border-right: 1px solid #ddd; }
+        .setup-main { flex: 1; padding: 40px; position: relative; }
+        .setup-step { display: none; }
+        .setup-step.active-step { display: block; animation: fadeIn 0.5s; }
+        .p-bar { width: 100%; height: 6px; background: #eee; margin-top: 20px; border-radius: 3px; overflow: hidden; }
+        .p-fill { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s; }
+        .setup-btn { position: absolute; bottom: 30px; right: 40px; background: var(--primary); color: white; border: none; padding: 8px 24px; border-radius: 4px; cursor: pointer; }
+
+        /* --- 2. BOOT STYLES --- */
+        #boot-screen { background: #000; }
+        .boot-logo { width: 120px; height: 120px; margin-bottom: 40px; }
+        .loader { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.2); border-top: 3px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- 3. OOBE STYLES --- */
+        #oobe-screen { background: #000; background-image: var(--bg-image); background-size: cover; backdrop-filter: blur(50px); }
+        .oobe-card { 
+            background: rgba(30,30,30,0.85); width: 600px; padding: 40px; border-radius: 12px; 
+            backdrop-filter: blur(20px); border: 1px solid var(--glass-border); text-align: center;
+        }
+        .oobe-input { width: 100%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 12px; color: white; border-radius: 6px; margin: 10px 0; outline: none; }
+        .oobe-input:focus { border-color: var(--primary); background: rgba(255,255,255,0.15); }
+
+        /* --- 4. DESKTOP STYLES --- */
+        #desktop-screen { 
+            background-image: var(--bg-image); background-size: cover; background-position: center; 
+        }
+
+        /* 12Bar (Dock) */
+        #bar-12 {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            height: 60px; padding: 0 15px; display: flex; align-items: center; gap: 12px;
+            background: var(--glass-bg); backdrop-filter: var(--glass-blur);
+            border-radius: 20px; border: 1px solid var(--glass-border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 1000;
+        }
+        .dock-item { width: 40px; height: 40px; position: relative; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+        .dock-item img { width: 100%; height: 100%; object-fit: contain; transition: 0.2s; }
+        .dock-item:hover img { transform: translateY(-8px) scale(1.1); }
+        .dock-dot { width: 4px; height: 4px; background: #fff; border-radius: 50%; position: absolute; bottom: -6px; opacity: 0; transition: 0.2s; }
+        .dock-item.running .dock-dot { opacity: 1; bottom: -2px; }
+
+        /* START MENU (Reference Layout) */
+        #start-menu {
+            position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+            width: 750px; height: 550px; 
+            background: rgba(25, 25, 25, 0.85); /* Dark transparency */
+            backdrop-filter: blur(40px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; 
+            display: none; grid-template-columns: 240px 1fr; grid-template-rows: 1fr 60px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5); z-index: 999;
+            color: white; overflow: hidden;
+            animation: startPop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        @keyframes startPop { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        #start-menu.open { display: grid; }
+
+        /* Start: Left Sidebar */
+        .start-sidebar { padding: 20px; border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto; }
+        .start-label { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; font-weight: 600; display: block; }
+        .list-app { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 6px; cursor: pointer; transition: 0.1s; }
+        .list-app:hover { background: rgba(255,255,255,0.1); }
+        .list-app img { width: 20px; height: 20px; }
+        .list-app span { font-size: 13px; }
+
+        /* Start: Right Content */
+        .start-content { padding: 20px 30px; overflow-y: auto; }
+        .pinned-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; row-gap: 20px; }
+        .pin-app { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; padding: 8px; border-radius: 6px; }
+        .pin-app:hover { background: rgba(255,255,255,0.1); }
+        .pin-app img { width: 32px; height: 32px; }
+        .pin-app span { font-size: 11px; text-align: center; }
+
+        /* Start: Bottom Bar */
+        .start-footer { grid-column: 1 / -1; background: rgba(0,0,0,0.2); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.05); }
+        .user-profile { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 10px; border-radius: 6px; }
+        .user-profile:hover { background: rgba(255,255,255,0.1); }
+        .footer-icons { display: flex; gap: 5px; }
+        .footer-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; filter: invert(1); }
+        .footer-icon:hover { background: rgba(255,255,255,0.2); }
+
+        /* --- WINDOW MANAGEMENT --- */
+        .window {
+            position: absolute; width: 900px; height: 600px; 
+            background: var(--win-bg); color: white;
+            border: 1px solid var(--glass-border); border-radius: 10px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+            display: flex; flex-direction: column; overflow: hidden;
+            animation: winOpen 0.2s;
+        }
+        @keyframes winOpen { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        
+        .title-bar { 
+            height: 40px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between; padding: 0 15px;
+        }
+        .controls button { background: none; border: none; color: white; width: 30px; height: 30px; cursor: pointer; border-radius: 4px; }
+        .controls button:hover { background: rgba(255,255,255,0.1); }
+        .controls button.close:hover { background: #e81123; }
+
+        /* Tab Manager */
+        .tab-strip { display: flex; height: 35px; background: #000; align-items: flex-end; padding: 0 10px; gap: 2px; }
+        .tab { 
+            background: var(--win-bg); padding: 5px 15px; border-radius: 8px 8px 0 0; 
+            font-size: 12px; display: flex; align-items: center; gap: 8px; min-width: 140px; border-top: 1px solid #333;
+        }
+        .tab.active { background: #333; z-index: 2; }
+        .tab-close { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .tab-close:hover { background: rgba(255,255,255,0.2); }
+
+    </style>
+</head>
+<body>
+
+    <div id="setup-screen" class="screen center-screen active">
+        <div class="setup-window">
+            <div class="setup-sidebar">
+                <h3>Setup</h3>
+                <p style="margin-top:20px; color:#666">1. Language</p>
+                <p style="color:#666">2. License</p>
+                <p style="color:#666">3. Install</p>
+            </div>
+            <div class="setup-main">
+                
+                <div id="setup-1" class="setup-step active-step">
+                    <h2>Windows Snow Valley</h2>
+                    <p>Select Language:</p>
+                    <select style="width:100%; padding:8px; margin-top:10px;"><option>English (United States)</option></select>
+                    <p>Select Keyboard Layout:</p>
+                    <select style="width:100%; padding:8px; margin-top:10px;"><option>US QWERTY</option></select>
+                    <button class="setup-btn" onclick="nextSetup(1)">Next</button>
+                </div>
+
+                <div id="setup-2" class="setup-step">
+                    <h2>License Agreement</h2>
+                    <div style="height:200px; background:#f9f9f9; padding:10px; border:1px solid #ccc; font-size:12px; overflow:auto;">
+                        MICROSOFT PRE-RELEASE SOFTWARE LICENSE TERMS<br><br>WINDOWS SNOW VALLEY PRO...
+                    </div>
+                    <label style="display:block; margin-top:15px;"><input type="checkbox" id="accept-check"> I accept</label>
+                    <button class="setup-btn" onclick="nextSetup(2)">Install</button>
+                </div>
+
+                <div id="setup-3" class="setup-step">
+                    <h2>Installing Windows Snow Valley</h2>
+                    <p id="install-text">Copying files...</p>
+                    <div class="p-bar"><div class="p-fill" id="install-bar"></div></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div id="boot-screen" class="screen center-screen">
+        <img src="https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/e86b010b-3de1-4c32-9c30-65282cacc1c9/djm44sq-da59b865-e93f-47c5-a30d-d7c60b8e0c00.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi9lODZiMDEwYi0zZGUxLTRjMzItOWMzMC02NTI4MmNhY2MxYzkvZGptNDRzcS1kYTU5Yjg2NS1lOTNmLTQ3YzUtYTMwZC1kN2M2MGI4ZTBjMDAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.g_Ep7Hb2zf5bHeEKFhRXj71AQMI2mjoxRgvFJvGLqvQ" class="boot-logo">
+        <div class="loader"></div>
+    </div>
+
+    <div id="oobe-screen" class="screen center-screen">
+        <div class="oobe-card" id="oobe-content">
+            <div id="oobe-1" class="setup-step active-step">
+                <h2>Select your Region</h2>
+                <select class="oobe-input"><option>United States</option><option>United Kingdom</option></select>
+                <button class="setup-btn" style="position:static; margin-top:20px;" onclick="nextOobe(1)">Next</button>
+            </div>
+            <div id="oobe-2" class="setup-step">
+                <h2>Name your PC</h2>
+                <input type="text" class="oobe-input" placeholder="Device Name">
+                <button class="setup-btn" style="position:static; margin-top:20px;" onclick="nextOobe(2)">Next</button>
+            </div>
+            <div id="oobe-3" class="setup-step">
+                <h2>Just a moment...</h2>
+                <div class="loader" style="margin:20px auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ready-screen" class="screen center-screen" style="background:#000;">
+        <h1 style="font-weight:100; font-size:40px;" id="ready-msg">Hi</h1>
+    </div>
+
+    <div id="desktop-screen" class="screen">
+        
+        <div id="start-menu">
+            <div class="start-sidebar">
+                <div class="start-label">Most used</div>
+                <div class="list-app" onclick="openApp('explorer')"><img src="https://img.icons8.com/color/48/folder-invoices--v1.png"><span>File Explorer</span></div>
+                <div class="list-app" onclick="openApp('edge')"><img src="https://img.icons8.com/color/48/microsoft-edge-insider.png"><span>Edge</span></div>
+                <div class="list-app" onclick="openApp('settings')"><img src="https://img.icons8.com/color/48/settings--v1.png"><span>Settings</span></div>
+                <div class="list-app"><img src="https://img.icons8.com/color/48/notepad.png"><span>Notepad</span></div>
+                
+                <div class="start-label" style="margin-top:20px;">All Apps</div>
+                <div class="list-app"><img src="https://img.icons8.com/color/48/calculator--v1.png"><span>Calculator</span></div>
+                <div class="list-app"><img src="https://img.icons8.com/color/48/camera.png"><span>Camera</span></div>
+                <div class="list-app"><img src="https://img.icons8.com/color/48/calendar--v1.png"><span>Calendar</span></div>
+                <div class="list-app"><img src="https://img.icons8.com/color/48/microsoft-store.png"><span>Store</span></div>
+                <div class="list-app"><img src="https://img.icons8.com/color/48/7-zip.png"><span>7-Zip</span></div>
+            </div>
+
+            <div class="start-content">
+                <div class="start-label">Pinned</div>
+                <div class="pinned-grid">
+                    <div class="pin-app" onclick="openApp('edge')"><img src="https://img.icons8.com/color/48/microsoft-edge-insider.png"><span>Edge</span></div>
+                    <div class="pin-app" onclick="openApp('explorer')"><img src="https://img.icons8.com/color/48/folder-invoices--v1.png"><span>Files</span></div>
+                    <div class="pin-app" onclick="openApp('settings')"><img src="https://img.icons8.com/color/48/settings--v1.png"><span>Settings</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/microsoft-store.png"><span>Store</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/microsoft-word-2019.png"><span>Word</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/microsoft-excel-2019.png"><span>Excel</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/spotify--v1.png"><span>Spotify</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/adobe-photoshop--v1.png"><span>Photoshop</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/microsoft-outlook-2019.png"><span>Outlook</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/xbox--v1.png"><span>Xbox</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/calculator--v1.png"><span>Calc</span></div>
+                    <div class="pin-app"><img src="https://img.icons8.com/color/48/clock--v1.png"><span>Clock</span></div>
+                </div>
+            </div>
+
+            <div class="start-footer">
+                <div class="user-profile">
+                    <img src="https://img.icons8.com/color/48/user-male-circle--v1.png" width="30">
+                    <span style="font-weight:600; font-size:13px;">User</span>
+                </div>
+                <div class="footer-icons">
+                    <div class="footer-icon"><img src="https://img.icons8.com/ios-glyphs/30/000000/settings.png" width="16"></div>
+                    <div class="footer-icon" onclick="location.reload()"><img src="https://img.icons8.com/ios-glyphs/30/000000/shutdown.png" width="16"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="bar-12">
+            <div class="dock-item" onclick="toggleStart()"><img src="https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/e86b010b-3de1-4c32-9c30-65282cacc1c9/djm44sq-da59b865-e93f-47c5-a30d-d7c60b8e0c00.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi9lODZiMDEwYi0zZGUxLTRjMzItOWMzMC02NTI4MmNhY2MxYzkvZGptNDRzcS1kYTU5Yjg2NS1lOTNmLTQ3YzUtYTMwZC1kN2M2MGI4ZTBjMDAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.g_Ep7Hb2zf5bHeEKFhRXj71AQMI2mjoxRgvFJvGLqvQ"></div>
+            <div class="dock-item" id="icon-edge" onclick="openApp('edge')"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/Microsoft_Edge_logo_%282019%29.svg/1024px-Microsoft_Edge_logo_%282019%29.svg.png"><div class="dock-dot"></div></div>
+            <div class="dock-item" id="icon-explorer" onclick="openApp('explorer')"><img src="https://img.icons8.com/color/48/folder-invoices--v1.png"><div class="dock-dot"></div></div>
+            <div class="dock-item" id="icon-store" onclick="openApp('store')"><img src="https://img.icons8.com/color/48/microsoft-store.png"><div class="dock-dot"></div></div>
+            <div class="dock-item" id="icon-settings" onclick="openApp('settings')"><img src="https://img.icons8.com/color/48/settings--v1.png"><div class="dock-dot"></div></div>
+        </div>
+
+        <div id="win-container"></div>
+    </div>
+
+    <script>
+        // --- SETUP LOGIC ---
+        function switchScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        function nextSetup(step) {
+            if(step === 1) {
+                document.getElementById('setup-1').classList.remove('active-step');
+                document.getElementById('setup-2').classList.add('active-step');
+            } else if (step === 2) {
+                if(!document.getElementById('accept-check').checked) return alert("Please accept terms");
+                document.getElementById('setup-2').classList.remove('active-step');
+                document.getElementById('setup-3').classList.add('active-step');
+                runInstall();
+            }
+        }
+
+        function runInstall() {
+            let bar = document.getElementById('install-bar');
+            let txt = document.getElementById('install-text');
+            let width = 0;
+            let interval = setInterval(() => {
+                width += Math.random() * 5;
+                if(width > 100) width = 100;
+                bar.style.width = width + "%";
+                
+                if(width > 30) txt.innerText = "Getting files ready...";
+                if(width > 70) txt.innerText = "Installing features...";
+                
+                if(width >= 100) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        switchScreen('boot-screen');
+                        setTimeout(() => switchScreen('oobe-screen'), 4000);
+                    }, 1000);
+                }
+            }, 200);
+        }
+
+        // --- OOBE LOGIC ---
+        function nextOobe(step) {
+            if(step === 1) {
+                document.getElementById('oobe-1').classList.remove('active-step');
+                document.getElementById('oobe-2').classList.add('active-step');
+            } else if(step === 2) {
+                document.getElementById('oobe-2').classList.remove('active-step');
+                document.getElementById('oobe-3').classList.add('active-step');
+                setTimeout(runGettingReady, 2000);
+            }
+        }
+
+        function runGettingReady() {
+            switchScreen('ready-screen');
+            let h1 = document.getElementById('ready-msg');
+            let msgs = ["Hi", "We're getting things ready for you", "This might take a few minutes", "Don't turn off your PC", "Almost there"];
+            let i = 0;
+            
+            function showNext() {
+                if(i < msgs.length) {
+                    h1.innerText = msgs[i];
+                    h1.style.opacity = 0;
+                    setTimeout(() => h1.style.opacity = 1, 100);
+                    i++;
+                    setTimeout(showNext, 2500);
+                } else {
+                    switchScreen('desktop-screen');
+                }
+            }
+            showNext();
+        }
+
+        // --- DESKTOP LOGIC ---
+        function toggleStart() {
+            document.getElementById('start-menu').classList.toggle('open');
+        }
+
+        document.getElementById('desktop-screen').addEventListener('mousedown', (e) => {
+            if(e.target.id === 'desktop-screen') document.getElementById('start-menu').classList.remove('open');
+        });
+
+        // --- WINDOW MANAGER ---
+        let zIndex = 100;
+        
+        function openApp(app) {
+            document.getElementById('start-menu').classList.remove('open');
+            document.getElementById('icon-'+app)?.classList.add('running');
+            
+            let winId = 'win-' + Date.now();
+            let win = document.createElement('div');
+            win.className = 'window';
+            win.id = winId;
+            win.style.top = '50px'; win.style.left = '50px'; win.style.zIndex = ++zIndex;
+            
+            win.onmousedown = () => win.style.zIndex = ++zIndex;
+
+            let content = '';
+            let title = '';
+            let icon = '';
+
+            // App Content Builder
+            if(app === 'edge') {
+                title = 'Microsoft Edge';
+                icon = 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/Microsoft_Edge_logo_%282019%29.svg/1024px-Microsoft_Edge_logo_%282019%29.svg.png';
+                content = `
+                    <div class="tab-strip" id="tabs-${winId}">
+                        <div class="tab active">New Tab <span class="tab-close" onclick="this.parentElement.remove()">×</span></div>
+                        <div style="color:white; padding:5px; cursor:pointer" onclick="addTab('${winId}')">+</div>
+                    </div>
+                    <div style="padding:8px; background:#333; display:flex; gap:10px;">
+                        <input type="text" style="flex:1; background:#222; border:1px solid #444; color:white; padding:5px 10px; border-radius:15px;" placeholder="Search or enter URL" onkeydown="if(event.key==='Enter') loadUrl('${winId}', this.value)">
+                    </div>
+                    <iframe id="frame-${winId}" src="https://www.bing.com" style="flex:1; border:none; background:white;"></iframe>
+                `;
+            } else if (app === 'explorer') {
+                title = 'File Explorer';
+                icon = 'https://img.icons8.com/color/48/folder-invoices--v1.png';
+                content = `
+                    <div class="tab-strip">
+                        <div class="tab active">Home <span class="tab-close">×</span></div>
+                        <div style="color:white; padding:5px;">+</div>
+                    </div>
+                    <div style="display:flex; height:100%;">
+                        <div style="width:180px; background:rgba(255,255,255,0.05); padding:10px; font-size:13px; line-height:2;">
+                            <div>⬇️ Downloads</div>
+                            <div>📄 Documents</div>
+                            <div>🖼️ Pictures</div>
+                            <div>🎵 Music</div>
+                        </div>
+                        <div style="flex:1; padding:20px; display:grid; grid-template-columns: repeat(auto-fill, 100px); gap:10px;">
+                            <div style="text-align:center"><img src="https://img.icons8.com/color/96/folder-invoices--v1.png"><br>Work</div>
+                            <div style="text-align:center"><img src="https://img.icons8.com/color/96/image.png"><br>Photos</div>
+                        </div>
+                    </div>
+                `;
+            } else if (app === 'settings') {
+                title = 'Settings';
+                icon = 'https://img.icons8.com/color/48/settings--v1.png';
+                content = `
+                    <div style="display:flex; height:100%;">
+                        <div style="width:200px; background:rgba(255,255,255,0.05); padding:15px;">
+                            <div style="padding:10px; background:rgba(255,255,255,0.1); border-radius:6px;">Personalization</div>
+                            <div style="padding:10px;">System</div>
+                            <div style="padding:10px;">Bluetooth</div>
+                        </div>
+                        <div style="flex:1; padding:30px;">
+                            <h2>Personalization</h2>
+                            <p>Background</p>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                <div style="width:100px; height:60px; background:blue; cursor:pointer;" onclick="setBg('blue')"></div>
+                                <div style="width:100px; height:60px; background:black; cursor:pointer;" onclick="setBg('black')"></div>
+                            </div>
+                            <br>
+                            <p>Custom URL:</p>
+                            <input type="text" style="width:100%; padding:8px; background:#333; border:1px solid #555; color:white;" onchange="document.documentElement.style.setProperty('--bg-image', 'url('+this.value+')')">
+                            <br><br>
+                            <p>Upload File:</p>
+                            <input type="file" onchange="uploadBg(this)">
+                        </div>
+                    </div>
+                `;
+            }
+
+            win.innerHTML = `
+                <div class="title-bar" onmousedown="dragStart(event, '${winId}')">
+                    <div style="display:flex; align-items:center; gap:10px;"><img src="${icon}" width="18"> ${title}</div>
+                    <div class="controls">
+                        <button onclick="this.closest('.window').style.display='none'">_</button>
+                        <button onclick="toggleMax('${winId}')">□</button>
+                        <button class="close" onclick="closeWin('${winId}', '${app}')">×</button>
+                    </div>
+                </div>
+                <div style="flex:1; display:flex; flex-direction:column;">${content}</div>
+            `;
+            
+            document.getElementById('win-container').appendChild(win);
+        }
+
+        function closeWin(id, app) {
+            document.getElementById(id).remove();
+            if(!document.querySelector(`[id^='win-']`)) { 
+                // Simple logic: if no windows open, remove dot (in reality needs to check specific app type)
+                document.getElementById('icon-'+app).classList.remove('running');
+            }
+        }
+
+        function loadUrl(id, url) {
+            if(!url.startsWith('http')) url = 'https://www.bing.com/search?q=' + url;
+            document.getElementById('frame-'+id).src = url;
+        }
+
+        function addTab(id) {
+            let strip = document.getElementById('tabs-'+id);
+            let tab = document.createElement('div');
+            tab.className = 'tab';
+            tab.innerHTML = 'New Tab <span class="tab-close" onclick="this.parentElement.remove()">×</span>';
+            strip.insertBefore(tab, strip.lastElementChild);
+        }
+
+        function setBg(color) {
+            document.documentElement.style.setProperty('--bg-image', color === 'black' ? 'none' : 'url(https://images.unsplash.com/photo-1550684848-fac1c5b4e853)');
+            if(color==='black') document.getElementById('desktop-screen').style.backgroundColor = '#000';
+        }
+
+        function uploadBg(input) {
+            if(input.files && input.files[0]) {
+                let reader = new FileReader();
+                reader.onload = function(e) {
+                    document.documentElement.style.setProperty('--bg-image', `url(${e.target.result})`);
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function toggleMax(id) {
+            let w = document.getElementById(id);
+            if(w.style.width === '100%') {
+                w.style.width = '900px'; w.style.height = '600px'; w.style.top = '50px'; w.style.left = '50px';
+            } else {
+                w.style.width = '100%'; w.style.height = '100%'; w.style.top = '0'; w.style.left = '0';
+            }
+        }
+
+        // Draggable Logic
+        let dragItem = null;
+        let diffX = 0, diffY = 0;
+
+        function dragStart(e, id) {
+            if(e.target.tagName === 'BUTTON') return;
+            dragItem = document.getElementById(id);
+            if(dragItem.style.width === '100%') return;
+            let rect = dragItem.getBoundingClientRect();
+            diffX = e.clientX - rect.left;
+            diffY = e.clientY - rect.top;
+            document.addEventListener('mousemove', dragMove);
+            document.addEventListener('mouseup', dragEnd);
+        }
+
+        function dragMove(e) {
+            if(!dragItem) return;
+            dragItem.style.left = (e.clientX - diffX) + 'px';
+            dragItem.style.top = (e.clientY - diffY) + 'px';
+        }
+
+        function dragEnd() {
+            dragItem = null;
+            document.removeEventListener('mousemove', dragMove);
+            document.removeEventListener('mouseup', dragEnd);
+        }
+
+    </script>
+</body>
+</html>
